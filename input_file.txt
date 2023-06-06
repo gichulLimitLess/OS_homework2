@@ -1,0 +1,19 @@
+BB w 3092
+BB w 10000
+BB w 20
+Aa r 20
+BB w 40
+BB r 50
+BB d
+Aa d
+Aa d
+AA w 30
+AX w 28670
+AZ r 300
+ZX w 3000
+ZX r 5
+ZX d
+aA w 30
+aA d
+AX d
+CC w 512
