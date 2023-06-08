@@ -58,7 +58,7 @@ int getBit(int blockIndex, int bitIndex) {
     if (blockIndex >= 0 && blockIndex < MAX_BLOCKS) {
         return (overall_Partition[blockIndex].data[bitIndex / 8] >> (bitIndex % 8)) & 1;
     }
-    return -1; // Indicate an invalid bit index
+    return -1; //찾으려 하는 bit가 존재하지 않는다면, -1을 return 한다
 }
 
 //inode Block들을 처음 상태로 초기화하는 것임
@@ -177,8 +177,8 @@ int read_operation(char* file_Name, int bytes)
                     i++;
                 }
             }
+            printf("\n");
             return 0;
-            
         }
     }
     else if(file_inode.fsize > bytes) //다 못 읽어내는 경우
@@ -204,7 +204,7 @@ int read_operation(char* file_Name, int bytes)
             {
                 if(((int*)overall_Partition[file_inode.iptr].data)[i+1] == 100 && read_bytes < 512) //iptr이 가리키는 data block에서의 마지막 dptr인 경우
                 {
-                    for(int j = 0; j<read_bytes; j++)
+                    for(int j = 0; j<read_bytes; j++) //읽어내야 할 bytes 수만큼 마지막에 읽어내면 된다
                     {
                         printf("%c",overall_Partition[file_inode.dptr+4].data[j]);
                     }
@@ -215,7 +215,7 @@ int read_operation(char* file_Name, int bytes)
                     for(int j = 0; j<512; j++)
                     {
                         printf("%c",overall_Partition[file_inode.dptr+4].data[j]);
-                        read_bytes--;
+                        read_bytes--; //읽어내야 할 bytes 수의 값을 -1한다
                     }
                     i++;
                 }
@@ -268,7 +268,7 @@ int write_operation(char* file_Name, int bytes)
                         //사용하지 않는 data block을 발견한 경우
                         if(getBit(1,DATA_BITMAP_STARTPOINT+j) == 0)
                         {
-                            usable_dataBlockCount++; 
+                            usable_dataBlockCount++; //사용할 수 있는 data block의 count를 증가시킨다
                         }
                     }
 
@@ -278,7 +278,7 @@ int write_operation(char* file_Name, int bytes)
                         return -1; //비정상 종료되었다고 하는 flag int값 넘겨주기
                     }
 
-                    int start_point = file_inode->fsize;
+                    int start_point = (file_inode->fsize)%512; //fsize를 512로 나머지 연산하면, 마지막 블록의 적혀진 char의 개수를 알 수 있다.
 
                     //남은 공간에 우선 하나씩 뒤에다가 붙여쓴다
                     for(int k = start_point; k < 512; k++)
@@ -513,7 +513,6 @@ int write_operation(char* file_Name, int bytes)
                 }
                 overall_Partition[j+4].data[bytes] = '\0'; //마지막 블럭은 null 문자를 집어넣어 준다
                 ((inode*)overall_Partition[2].data)[now_inum_cond].fsize++;
-                printf("file size 512보다 작을 때 : %d\n",((inode*)overall_Partition[2].data)[now_inum_cond].fsize);
                 return 0; //제대로 수행되었다고 하는 flag int값 넘겨주기
             }
         }
@@ -637,7 +636,6 @@ int write_operation(char* file_Name, int bytes)
                         overall_Partition[j+4].data[write_bytes-1] = '\0'; //마지막 블럭은 null 문자를 집어넣어 준다
                         ((inode*)overall_Partition[2].data)[now_inum_cond].fsize++; //null을 하나 추가 했으므로
                         count = 0;
-                        printf("file size 512보다 클 때 : %d\n",((inode*)overall_Partition[2].data)[now_inum_cond].fsize);
                         return 0; //제대로 수행되었다고 하는 flag int값 넘겨주기
                     }
                 }
@@ -670,8 +668,6 @@ int delete_operation(char* file_Name)
             return -1; //비정상 종료임을 명시
         }
     }
-
-    printf("fsize: %d\n", file_inode->fsize);
 
     //삭제 작업을 실시한다
     if(file_inode->blocks >= 2) //iptr에 연결되어 있는 dptr까지 다 처리해야 하는 경우
@@ -739,8 +735,9 @@ void printBlockArrayTo_HexaDecimal(Block* blockArray, int size) {
 
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < 512; j++) {
-            unsigned char byteValue = (unsigned char)blockArray[i].data[j];
-            for (int k = 7; k >= 0; k -= 4) {
+            unsigned char byteValue = (unsigned char)blockArray[i].data[j]; //음수가 되는 것을 우려하여 unsigned char로 type casting을 진행했다.
+            //4비트씩 끊어서 계산한다. 그를 오른쪽으로 k만큼 shift하여 그 값을 hexValue로 저장하고, 이를 print한다
+            for (int k = 7; k >= 0; k -= 4) { 
                 unsigned char hexValue = (byteValue >> k) & 0x0F;
                 printf("%X", hexValue);
             }
