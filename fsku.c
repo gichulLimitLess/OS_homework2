@@ -16,8 +16,8 @@ typedef struct {
 //Data Block 0번에서 root Directory 내부의 파일들의 정보를 저장하는 역할을 할 것임
 //이는 이후 배열로 선언되어 Data Block 0번에 집어넣을 것이다
 typedef struct {
-    unsigned char inum;
-    unsigned char Name[3];
+    unsigned char inum; //file의 inode number
+    unsigned char Name[3]; //file의 이름
 } rootDirectoryInfo;
 
 //inode 관련한 정보를 가지고 있는 구조체
@@ -61,7 +61,6 @@ int getRealFileSize(inode* inode)
     else
     {
         directed_forDptrInList_count = (inode->blocks)-2; //dptr이 가리키는 datablock과 dptr들을 저장하는 dataBlock들은 제한다
-        printf("directed 개수 : %d\n",directed_forDptrInList_count);
         real_fsize = 512 + 4*directed_forDptrInList_count + 512*(directed_forDptrInList_count-1) + ((inode->fsize) % 512);  //dptr이 가리키는 꽉 찬 data block + data block 내부에 저장되어 있는 dptr 개수 + 꽉 찬 data block 개수들 + 꽉 안찬 마지막 data block 1개
         return real_fsize;
     }
@@ -80,17 +79,6 @@ int getBit(int blockIndex, int bitIndex) {
         return (overall_Partition[blockIndex].data[bitIndex / 8] >> (bitIndex % 8)) & 1;
     }
     return -1; // Indicate an invalid bit index
-}
-
-
-//Data를 집어넣기 위한 함수 선언
-void insertData(int blockIndex, void* data, size_t dataSize)
-{
-    //blockIndex가 유효한 값일 경우 (0~63인 경우)
-    if(blockIndex >= 0 && blockIndex < MAX_BLOCKS)
-    {
-        memcpy(overall_Partition[blockIndex].data, data, dataSize);
-    }
 }
 
 //inode Block들을 처음 상태로 초기화하는 것임
@@ -215,14 +203,13 @@ int read_operation(char* file_Name, int bytes)
     }
     else if(file_inode.fsize > bytes) //다 못 읽어내는 경우
     {
-        printf("fsize : %d\n",file_inode.fsize);
         if(bytes < 512) //iptr까지 안 읽어도 되는 경우
         {
             for(int i = 0; i<bytes; i++) //들어온 bytes 만큼만 읽는다
             {
                 printf("%c",overall_Partition[file_inode.dptr+4].data[i]);
             }
-            printf("\n\n");
+            printf("\n");
             return 0;
         }
         else //iptr에서 추가적으로 읽어내야 하는 경우
@@ -253,7 +240,7 @@ int read_operation(char* file_Name, int bytes)
                     i++;
                 }
             }
-            printf("\n\n");
+            printf("\n");
             return 0;
         }
     }
@@ -395,8 +382,6 @@ int write_operation(char* file_Name, int bytes)
                     }
 
                     int count = 0;
-
-                    printf("\n남은 데이터 블럭 개수 값 : %d\n",usable_dataBlockCount);
 
                     //아직 다 안쓴 공간부터 채워줘야 하므로, iptr이 가리키는 data block에서의 dptr을 뒤지면서 찾아봐야 한다
                     for(int j = 0; j < 128; j++)
@@ -567,9 +552,6 @@ int write_operation(char* file_Name, int bytes)
                 remain_BlockCount++; //남아있는 block Count++
             }
         }
-
-        printf("남아있는 블럭 개수 : %d개\n",remain_BlockCount);
-        printf("필요한 블럭 개수 : %d개\n",needed_BlockCount);
         
         if(needed_BlockCount > remain_BlockCount) //남아있는 data block이 부족한 경우
         {
@@ -630,10 +612,6 @@ int write_operation(char* file_Name, int bytes)
                 setBit(1, DATA_BITMAP_STARTPOINT+j); //해당 data block 사용한다고 표시
                 ((inode*)overall_Partition[2].data)[now_inum_cond].iptr = j;
 
-                for(int k = 0; k<128; k++)
-                {
-                    dptr_List[k] = 100; //유효하지 않은 값으로 우선 쭉 집어넣는다
-                } 
                 memcpy(overall_Partition[j+4].data, dptr_List, sizeof(int)*128); //초기화된 dptr_List(dptr 모음집)을 해당 data block에 집어넣는다
                 ((inode*)overall_Partition[2].data)[now_inum_cond].fsize += 512; //data block 하나를 또 가지게 되었으니, 512바이트 만큼 가지게 되었다고 fsize로 표시해준다
                 setBit(1,DATA_BITMAP_STARTPOINT+j); //d-bmap에 사용 중이라고 바꿔준다
@@ -673,8 +651,6 @@ int write_operation(char* file_Name, int bytes)
                         overall_Partition[j+4].data[write_bytes-1] = '\0'; //마지막 블럭은 null 문자를 집어넣어 준다
                         ((inode*)overall_Partition[2].data)[now_inum_cond].fsize++; //null을 하나 추가 했으므로
                         count = 0;
-                        printf("새로 만든 %s 파일 크기 : %d\n",file_Name, ((inode*)overall_Partition[2].data)[now_inum_cond].fsize);
-                        printf("새로 만든 %s 실제 파일 크기 : %d\n",file_Name, getRealFileSize(&((inode*)overall_Partition[2].data)[now_inum_cond]));
                         return 0; //제대로 수행되었다고 하는 flag int값 넘겨주기
                     }
                 }
@@ -707,8 +683,6 @@ int delete_operation(char* file_Name)
             return -1; //비정상 종료임을 명시
         }
     }
-
-    printf("잘 동작? %d\n",getRealFileSize(file_inode));
 
     //삭제 작업을 실시한다
     if(file_inode->blocks >= 2) //iptr에 연결되어 있는 dptr까지 다 처리해야 하는 경우
@@ -750,16 +724,10 @@ int delete_operation(char* file_Name)
             overall_Partition[(file_inode->dptr) + 4].data[i] = 0; //다 0으로 그냥 초기화한다 
         }
         clearBit(1,DATA_BITMAP_STARTPOINT+(file_inode->dptr));
-        for(int i = 0; i<60; i++)
-        {
-            printf("%u",getBit(1,DATA_BITMAP_STARTPOINT+i));
-        }
-        printf("\n");
 
         file_inode->blocks = 0;
         file_inode->fsize = 0;
         clearBit(1,file_inum);
-        printf("%s Delete 완료\n", file_Name);
         return 0;
         
     }
@@ -773,13 +741,13 @@ int delete_operation(char* file_Name)
         file_inode->blocks = 0;
         file_inode->fsize = 0;
         clearBit(1,file_inum);
-        printf("%s Delete 완료\n",file_Name);
         return 0;
     }
 }
 
 //16진수로 결과를 출력해주는 함수
 void printBlockArrayTo_HexaDecimal(Block* blockArray, int size) {
+
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < 512; j++) {
             unsigned char byteValue = (unsigned char)blockArray[i].data[j];
