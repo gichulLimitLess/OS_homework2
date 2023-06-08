@@ -32,8 +32,6 @@ typedef struct {
 //파일 입출력을 위해 File 포인터 operation_List 정의
 //파일 입출력에 사용할 line을 위한 char 배열 line 정의
 Block* overall_Partition;
-// inode* inode_Block1;
-// inode* inode_Block2;
 inode* inode_Block_all;
 rootDirectoryInfo* dataInfoTable;
 FILE *operation_List;
