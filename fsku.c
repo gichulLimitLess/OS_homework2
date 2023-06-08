@@ -46,26 +46,6 @@ void setBit(int blockIndex, int bitIndex) {
     }
 }
 
-//지금 inode에 들어가 있는 fsize 값은 iptr이 가리키고 있는 값은 전부 512bytes라고 가정하고 있다
-//진짜 file size를 return 해주는 함수 (필요시 사용하면 될 듯)
-int getRealFileSize(inode* inode)
-{
-    int directed_forDptrInList_count = 0;
-    int real_fsize = 0;
-    //iptr을 사용하고 있지 않으면, 그대로 돌려주면 된다
-    if(inode->iptr == 100)
-    {
-        return inode->fsize;
-    }
-    //iptr을 사용 중이라면
-    else
-    {
-        directed_forDptrInList_count = (inode->blocks)-2; //dptr이 가리키는 datablock과 dptr들을 저장하는 dataBlock들은 제한다
-        real_fsize = 512 + 4*directed_forDptrInList_count + 512*(directed_forDptrInList_count-1) + ((inode->fsize) % 512);  //dptr이 가리키는 꽉 찬 data block + data block 내부에 저장되어 있는 dptr 개수 + 꽉 찬 data block 개수들 + 꽉 안찬 마지막 data block 1개
-        return real_fsize;
-    }
-}
-
 //특정 bit를 0으로 바꿔주는 clearBit
 void clearBit(int blockIndex, int bitIndex) {
     if (blockIndex >= 0 && blockIndex < MAX_BLOCKS) {
@@ -266,7 +246,10 @@ int write_operation(char* file_Name, int bytes)
         {
             file_inode = &((inode*)overall_Partition[2].data)[now_inum_cond];
 
-            //현재 가지고 있는 Data Block들로는 write를 다 수행할 수 없을 때 (+1은 null 문자 때문에)
+            //현재 가지고 있는 Data Block들로는 write를 다 수행할 수 없을 때
+            //file_inode의 fsize 값을 512로 나머지 연산을 한 값은 해당 file의 data가 저장된 맨 마지막 블록에 적혀진 char의 bytes수
+            //위 값을 한 data block의 크기인 512에서 빼면, 맨 마지막 블록에 적을 수 있는 bytes수가 된다
+            //이 bytes값이 입력해야 할 bytes+1(+1은 맨 끝의 '\0' 문자 때문에)보다 작은 경우, 적을 공간이 없으니 새로운 공간을 할당해야 한다
             if(512-((file_inode->fsize)%512) < (bytes+1))
             {
                 file_inode->fsize--; //'\0' 문자 제거하고 시작할 것이므로 미리 fsize를 줄여주고 시작한다.
@@ -319,7 +302,6 @@ int write_operation(char* file_Name, int bytes)
                             } 
                             file_inode->iptr = j; //해당 data block을 iptr가 가리키도록 하고, 거기엔 dptr_List를 집어넣을 것이다
                             memcpy(overall_Partition[j+4].data, dptr_List, sizeof(int)*128); //초기화된 dptr_List(dptr 모음집)을 해당 data block에 집어넣는다
-                            file_inode->fsize = file_inode->fsize + 512; //data block 하나를 또 가지게 되었으니, 512바이트 만큼 가지게 되었다고 fsize로 표시해준다
                             file_inode->blocks++; //사용하는 block 개수를 추가해준다
                             setBit(1,DATA_BITMAP_STARTPOINT+j); //d-bmap에 사용 중이라고 바꿔준다
                             free(dptr_List);
@@ -354,6 +336,7 @@ int write_operation(char* file_Name, int bytes)
                                 }
                                 overall_Partition[j+4].data[write_bytes-1] = '\0'; //마지막엔 null문자 삽입
                                 file_inode->blocks++; //사용하는 block 개수를 추가해준다
+                                file_inode->fsize++; //inode에 file size 값을 증가시킨다
                                 return 0; //정상적으로 수행되었다고 하는 flag int값 넘겨주기
                             }
                         }
@@ -428,13 +411,14 @@ int write_operation(char* file_Name, int bytes)
                             else //1개의 data block으로 충분한 경우
                             {
                                 setBit(1,DATA_BITMAP_STARTPOINT+j); //d-bmap에 해당 block을 사용 중이라고 바꿔준다
-                                for(int k = 0; k < write_bytes; k++)
+                                for(int k = 0; k < write_bytes-1; k++)
                                 {
                                     overall_Partition[j+4].data[k] = file_Name[0];
                                     file_inode->fsize++; //inode에 file size 값을 증가시킨다
                                 }
-                                overall_Partition[j+4].data[write_bytes] = '\0';
+                                overall_Partition[j+4].data[write_bytes-1] = '\0';
                                 file_inode->blocks++; //사용하는 block 개수를 추가해준다
+                                file_inode->fsize++; //inode에 file size 값을 증가시킨다
 
                                 return 0; //정상적으로 수행되었다고 하는 flag int값 넘겨주기
                             }
@@ -448,12 +432,13 @@ int write_operation(char* file_Name, int bytes)
                 if(file_inode->iptr == 100) //iptr을 사용하는 경우까지 안 가도 되는 경우
                 {
                     //direct pointer가 가리키는 위치에 있는 문자열 뒤에다가 하나씩 붙여쓴다
-                    for(int j = 0; j < bytes+1; j++)
+                    for(int j = 0; j < bytes; j++)
                     {
                         overall_Partition[file_inode->dptr+4].data[j] = file_Name[0];
                         ((inode*)overall_Partition[2].data)[now_inum_cond].fsize++; //fsize 업데이트
                     }
-                    overall_Partition[file_inode->dptr+4].data[bytes+1] = '\0';
+                    overall_Partition[file_inode->dptr+4].data[bytes] = '\0';
+                    ((inode*)overall_Partition[2].data)[now_inum_cond].fsize++; //fsize 업데이트
                     return 0; //제대로 수행되었다고 하는 flag int값 넘겨주기
                 }
                 else //iptr을 사용하는 경우까지 간 경우
@@ -467,12 +452,13 @@ int write_operation(char* file_Name, int bytes)
                         if(now_dptr != 100 && ((int*)overall_Partition[(file_inode->iptr)+4].data)[j+1] == 100)
                         {
                             //direct pointer가 가리키는 위치에 있는 문자열 뒤에다가 하나씩 붙여쓴다
-                            for(int k = 0; k < bytes+1; k++)
+                            for(int k = 0; k < bytes; k++)
                             {
                                 overall_Partition[now_dptr+4].data[j] = file_Name[0];
                                 ((inode*)overall_Partition[2].data)[now_inum_cond].fsize++; //fsize 업데이트
                             }
-                            overall_Partition[now_dptr+4].data[bytes+1] = '\0';
+                            overall_Partition[now_dptr+4].data[bytes] = '\0';
+                            ((inode*)overall_Partition[2].data)[now_inum_cond].fsize++; //fsize 업데이트
                             return 0; //제대로 수행되었다고 하는 flag int값 넘겨주기
                         }
                     }
@@ -520,13 +506,14 @@ int write_operation(char* file_Name, int bytes)
                 setBit(1,DATA_BITMAP_STARTPOINT+j); //해당 비트를 사용 중이라고 바꾸고
                 ((inode*)overall_Partition[2].data)[now_inum_cond].dptr = j; //direct pointer로 새로운 data block 하나 가리키도록 함
                 //direct pointer가 가리키는 위치에 있는 문자열 뒤에다가 하나씩 붙여쓴다
-                for(int l = 0; l < bytes+1; l++)
+                for(int l = 0; l < bytes; l++)
                 {
                     overall_Partition[j+4].data[l] = file_Name[0];
                     ((inode*)overall_Partition[2].data)[now_inum_cond].fsize++; //해당 file에 대한 inode에서 fsize 업데이트
                 }
-                overall_Partition[j+4].data[bytes+1] = '\0'; //마지막 블럭은 null 문자를 집어넣어 준다
+                overall_Partition[j+4].data[bytes] = '\0'; //마지막 블럭은 null 문자를 집어넣어 준다
                 ((inode*)overall_Partition[2].data)[now_inum_cond].fsize++;
+                printf("file size 512보다 작을 때 : %d\n",((inode*)overall_Partition[2].data)[now_inum_cond].fsize);
                 return 0; //제대로 수행되었다고 하는 flag int값 넘겨주기
             }
         }
@@ -613,7 +600,6 @@ int write_operation(char* file_Name, int bytes)
                 ((inode*)overall_Partition[2].data)[now_inum_cond].iptr = j;
 
                 memcpy(overall_Partition[j+4].data, dptr_List, sizeof(int)*128); //초기화된 dptr_List(dptr 모음집)을 해당 data block에 집어넣는다
-                ((inode*)overall_Partition[2].data)[now_inum_cond].fsize += 512; //data block 하나를 또 가지게 되었으니, 512바이트 만큼 가지게 되었다고 fsize로 표시해준다
                 setBit(1,DATA_BITMAP_STARTPOINT+j); //d-bmap에 사용 중이라고 바꿔준다
 
                 free(dptr_List); //dptr_List는 더 이상 필요 없으니 free!
@@ -651,6 +637,7 @@ int write_operation(char* file_Name, int bytes)
                         overall_Partition[j+4].data[write_bytes-1] = '\0'; //마지막 블럭은 null 문자를 집어넣어 준다
                         ((inode*)overall_Partition[2].data)[now_inum_cond].fsize++; //null을 하나 추가 했으므로
                         count = 0;
+                        printf("file size 512보다 클 때 : %d\n",((inode*)overall_Partition[2].data)[now_inum_cond].fsize);
                         return 0; //제대로 수행되었다고 하는 flag int값 넘겨주기
                     }
                 }
@@ -684,10 +671,12 @@ int delete_operation(char* file_Name)
         }
     }
 
+    printf("fsize: %d\n", file_inode->fsize);
+
     //삭제 작업을 실시한다
     if(file_inode->blocks >= 2) //iptr에 연결되어 있는 dptr까지 다 처리해야 하는 경우
     {
-        delete_bytes = (file_inode->fsize) - 1024; //iptr이 가리키고 있는 data block 크기를 제외한 곳만 지워야 하니까
+        delete_bytes = (file_inode->fsize) - 512; //iptr이 가리키고 있는 data block 크기를 제외한 곳만 지워야 하니까
         int dptr_inList = 0;
         //iptr 관련 친구들부터 처리할 것이다
         for(int i =0; i<61; i++)
